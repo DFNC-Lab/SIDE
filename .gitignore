@@ -1,0 +1,52 @@
+__pycache__/
+*.pyc
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runtime output.  The tools create these while they run.  Never commit them:
+# they hold keys, collected chains or conversation text.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# organization seal-key  → organization\org_keys\seal_secret.hex (private key), seal_pub.hex (public key)
+org_keys/
+seal_secret.hex
+seal_pub.key
+*.hex
+
+# employee root-key      → <chosen folder>\SIDE_custody_<device>_<time>\ (root key K0, enrollment certificate)
+SIDE_custody_*/
+k0.hex
+
+# employee install       → %ProgramData%\SIDE\ (outside the repository); a reinstall moves the old one aside
+SIDE_previous_install_*/
+
+# employee collect       → employee\collections\SIDE_collection_<device>_<time>.zip
+collections/
+SIDE_collection_*.zip
+
+# organization receive   → organization\received\<collection>\ (+ verification_result.txt)
+received/
+
+# organization disclose  → organization\disclosures\SIDE_disclosure_<device>_<time>.json (+ .lines.jsonl text)
+disclosures/
+SIDE_disclosure_*.json
+SIDE_disclosure_*.lines.jsonl
+*.package.json
+*.lines.jsonl
+
+# side_service.py run without SIDE_STORE → src\.side_store\
+.side_store/
+
+# tests\test_end_to_end.py → tests\results\
+tests/results/
+
+# field-test\side_test.py writes these next to itself
+test_*.txt
+test_*.log
+test_*.json
+.side_test_w
+
+# Build output (PyInstaller, pip)
+build/
+dist/
+*.spec
+*.egg-info/

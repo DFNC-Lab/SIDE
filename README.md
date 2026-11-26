@@ -17,7 +17,7 @@ SIDE는 AI 코딩 에이전트(Claude Code, Codex CLI, Antigravity)의 세션 �
 
 | What you get | Meaning | 의미 |
 |--------------|---------|------|
-| Tamper detection | Lines changed, deleted, or reordered after binding, and deleted session logs, are detected | 묶인 뒤 바뀌거나 지워지거나 순서가 바뀐 행과 지워진 세션 로그를 탐지 |
+| Tamper detection | Lines changed, deleted, or reordered after binding, and session logs deleted after SIDE read them, are detected | 묶인 뒤 바뀌거나 지워지거나 순서가 바뀐 행과 SIDE가 읽은 뒤 지워진 세션 로그를 탐지 |
 | Selective disclosure | Disclose only incident records; the undisclosed records are proven to exist without revealing their content | 사건 관련 레코드만 제출하고, 제출하지 않은 레코드는 내용 없이 존재만 증명 |
 | Out of the employee's reach | Binding runs under the Windows system account; a standard user cannot stop it or write its chains | 묶기는 Windows system 계정에서 돌아, 표준 사용자는 멈추거나 체인을 쓸 수 없음 |
 | No outside party | No server, blockchain, or dedicated hardware, and no network use. Python standard library only | 서버·블록체인·전용 장비가 필요 없고 네트워크를 쓰지 않음. Python 표준 라이브러리만 사용 |
@@ -43,17 +43,16 @@ SIDE에는 세 역할이 있습니다. 폴더마다 한 곳에서 쓰는 도구�
      검증 창을 쓰려면 *tcl/tk and IDLE*을 켜 둡니다(기본값).
 2. Download this repository (`git clone` or *Code → Download ZIP*).
    이 저장소를 내려받습니다(`git clone` 또는 *Code → Download ZIP*).
-3. Open a terminal in the folder and run:
-   폴더에서 터미널을 열고 실행합니다.
-   ```
-   python side.py --help
-   ```
+3. Open your role folder and double click its numbered `.bat` files in order. Each file asks for what it needs,
+   and the employee PC files ask for administrator rights by themselves.
+   역할 폴더를 열고 번호 붙은 `.bat` 파일을 순서대로 더블 클릭합니다. 파일마다 필요한 것을 묻고, 직원 PC의
+   파일은 관리자 권한을 스스로 요청합니다.
 
-Every command has the form `python side.py <role> <command>`. Each role folder also holds numbered `.bat`
-files that run the same commands with a double click.
+The `.bat` files run `side.py`. For scripts or a remote session, run the same steps as
+`python side.py <role> <command>` (see `python side.py --help`).
 
-모든 명령은 `python side.py <역할> <명령>` 형식입니다. 역할 폴더마다 같은 명령을 더블 클릭으로 실행하는
-번호 붙은 `.bat` 파일도 있습니다.
+`.bat` 파일은 `side.py`를 실행합니다. 스크립트나 원격 세션에서는 같은 단계를
+`python side.py <역할> <명령>`으로 실행합니다(`python side.py --help` 참고).
 
 ---
 
@@ -61,11 +60,11 @@ files that run the same commands with a double click.
 
 ```
 SIDE\
-  ├─ side.py           ← start here: python side.py <role> <command> / 여기서 시작
+  ├─ organization\     ← organization PC: 1_ to 5_*.bat, keys, received collections, disclosures / 조직 PC
+  ├─ employee\         ← run by IT on the employee PC: 1_ to 9_*.bat, seal_pub.hex in, collections out / 직원 PC
+  ├─ verifier\         ← verifier: 1_viewer.bat, 2_check_package.bat / 검증자
+  ├─ side.py           ← command-line entry that the .bat files run / .bat 파일이 실행하는 명령줄 진입점
   ├─ src\              ← Python code, standard library only / Python 코드, 표준 라이브러리만
-  ├─ organization\     ← organization: keys, received collections, disclosures / 조직: 키, 수거본, 제출 패키지
-  ├─ employee\         ← run by IT on the employee PC: seal_pub.hex in, collections out / IT가 직원 PC에서 실행
-  ├─ verifier\         ← verifier: viewer window / 검증자: 검증 창
   ├─ tests\            ← automated test / 자동 시험
   ├─ field-test\       ← test on a real Windows PC / 실제 Windows PC 시험
   └─ docs\             ← detailed guide / 자세한 안내
@@ -93,38 +92,56 @@ Phase 2 · Sealing, disclosure, and verification, after an incident / 봉인·�
 
 ## 4. Usage / 사용법
 
-`(admin)` means a terminal opened with *Run as administrator*.
-`(admin)`은 *관리자 권한으로 실행*한 터미널을 뜻합니다.
+Double click the file in the *Double click* column. Files on the employee PC ask for administrator rights.
+*Double click* 열의 파일을 더블 클릭합니다. 직원 PC의 파일은 관리자 권한을 요청합니다.
 
 ### Phase 0 · Enrollment / 가입
 
-| Where | Command | What happens | 하는 일 |
-|-------|---------|--------------|--------|
-| organization | `python side.py organization seal-key` | Makes the seal key pair. Copy `organization\seal_pub.hex` into `employee\` on the employee PC. The private key stays here. | 봉인 키 쌍을 만듭니다. `organization\seal_pub.hex`를 직원 PC의 `employee\`에 넣습니다. 개인 키는 여기 남습니다. |
-| employee PC (admin) | `python side.py employee install --key-out E:\` | Installs the binding service for the signed-in account (`--employee <account>` for another) and enrolls the PC. It then moves the root key K0 to the USB drive `E:\` and erases the PC copy. Give the `SIDE_custody_*` folder to the organization. | 로그인한 계정(다른 계정은 `--employee <계정>`)을 묶는 서비스를 설치하고 PC를 가입시킵니다. 이어 루트 키 K0를 USB `E:\`로 옮기고 PC 사본을 지웁니다. `SIDE_custody_*` 폴더를 조직에 넘깁니다. |
-| employee PC (admin) | `python side.py employee root-key --key-out E:\` | Only if the root key was not moved during install. | 설치 때 루트 키를 옮기지 않은 경우에만 실행합니다. |
+| Step | Where | Double click | What happens | 하는 일 |
+|:---:|-------|--------------|--------------|--------|
+| 1 | organization PC | `organization\1_make_seal_key.bat` | Makes the seal key pair. Copy `organization\seal_pub.hex` into `employee\` on the employee PC. The private key stays here. | 봉인 키 쌍을 만듭니다. `organization\seal_pub.hex`를 직원 PC의 `employee\`에 넣습니다. 개인 키는 여기 남습니다. |
+| 2 | employee PC | `employee\1_install.bat` | Asks for the employee account (Enter = signed-in account), installs the binding service, and enrolls the PC. It then asks for a USB folder, moves the root key K0 there, and erases the PC copy. Give the `SIDE_custody_*` folder to the organization. | 묶을 직원 계정(Enter = 로그인한 계정)을 묻고 서비스를 설치해 PC를 가입시킵니다. 이어 USB 폴더를 물어 루트 키 K0를 옮기고 PC 사본을 지웁니다. `SIDE_custody_*` 폴더를 조직에 넘깁니다. |
+| 3 | employee PC | `employee\2_move_root_key.bat` | Only if step 2 did not move the root key. | 2단계에서 루트 키를 옮기지 않은 경우에만 실행합니다. |
 
 ### Phase 1 · Binding / 묶기
 
-| Where | Command | What happens | 하는 일 |
-|-------|---------|--------------|--------|
-| employee PC | — | Nothing to do. The service binds in the background and starts at every boot. | 할 일이 없습니다. 서비스가 뒤에서 묶고 부팅 때마다 시작합니다. |
-| employee PC (admin) | `python side.py employee status` | Shows whether the service runs, the device ledger, and the number of session chains. | 서비스 동작 여부, 단말 기록부, 세션 체인 수를 보여 줍니다. |
+| Step | Where | Double click | What happens | 하는 일 |
+|:---:|-------|--------------|--------------|--------|
+| 4 | employee PC | — | Nothing to do. The service binds in the background and starts at every boot. | 할 일이 없습니다. 서비스가 뒤에서 묶고 부팅 때마다 시작합니다. |
+| 5 | employee PC | `employee\3_status.bat` | Shows whether the service runs, the device ledger, and the number of session chains. | 서비스 동작 여부, 단말 기록부, 세션 체인 수를 보여 줍니다. |
 
 ### Phase 2 · Sealing, disclosure, verification / 봉인·제출·검증
 
-| Where | Command | What happens | 하는 일 |
-|-------|---------|--------------|--------|
-| employee PC (admin) | `python side.py employee collect` | Stops the service, seals the chains, and writes `employee\collections\SIDE_collection_*.zip`. Add `--include-logs` to include the session logs (conversation text). | 서비스를 멈추고 체인을 봉인해 `SIDE_collection_*.zip`을 만듭니다. 세션 로그(대화 원문)를 넣으려면 `--include-logs`를 붙입니다. |
-| organization | `python side.py organization receive <zip> --custody <SIDE_custody_*> --seal-private-key organization\org_keys\seal_secret.hex` | Compares the enrollment certificate with the custody copy, signs the seal, and verifies every chain with K0. The result goes to `verification_result.txt`. | 가입 증서를 보관본과 대조하고 봉인에 서명한 뒤 K0로 모든 체인을 검증합니다. 결과는 `verification_result.txt`에 남습니다. |
-| organization | `python side.py organization disclose` | Pick a session and the records to disclose, and send `organization\disclosures\SIDE_disclosure_*.json` to the verifier. Add `--lines` to also write the text of those lines (`.lines.jsonl`); this needs a collection made with `--include-logs`. | 세션과 제출할 레코드를 골라 `SIDE_disclosure_*.json`을 검증자에게 보냅니다. 그 행의 원문(`.lines.jsonl`)도 내려면 `--lines`를 붙입니다. `--include-logs`로 수거한 경우에만 됩니다. |
-| verifier | `python side.py verifier` | Opens the viewer. Load the package and the `seal_pub.hex` the organization published in advance. It checks inclusion, record count, and seal signature, and shows accept or reject. | 검증 창을 엽니다. 패키지와 조직이 미리 공개한 `seal_pub.hex`를 열면 포함 증명·레코드 수·봉인 서명을 확인해 수용 또는 거부를 보여 줍니다. |
+| Step | Where | Double click | What happens | 하는 일 |
+|:---:|-------|--------------|--------------|--------|
+| 6 | employee PC | `employee\4_collect.bat` | Stops the service, seals the chains, and writes `employee\collections\SIDE_collection_*.zip`. Choose [2] to include the session logs (conversation text). | 서비스를 멈추고 체인을 봉인해 `SIDE_collection_*.zip`을 만듭니다. 세션 로그(대화 원문)를 넣으려면 [2]를 고릅니다. |
+| 7 | organization PC | `organization\2_receive_collection.bat` | Drag in the zip and the `SIDE_custody_*` folder. Compares the enrollment certificate with the custody copy, signs the seal, and verifies every chain with K0. The result goes to `verification_result.txt`. | zip과 `SIDE_custody_*` 폴더를 끌어 놓습니다. 가입 증서를 보관본과 대조하고 봉인에 서명한 뒤 K0로 모든 체인을 검증합니다. 결과는 `verification_result.txt`에 남습니다. |
+| 8 | organization PC | `organization\3_disclose.bat` | Pick a session and the records to disclose, and send `organization\disclosures\SIDE_disclosure_*.json` to the verifier. Choose [2] to also write the text of those lines (`.lines.jsonl`); this needs a collection made with [2] in step 6. | 세션과 제출할 레코드를 골라 `SIDE_disclosure_*.json`을 검증자에게 보냅니다. 그 행의 원문(`.lines.jsonl`)도 내려면 [2]를 고릅니다. 6단계에서 [2]로 수거한 경우에만 됩니다. |
+| 9 | verifier | `verifier\1_viewer.bat` | Opens the viewer. Load the package and the `seal_pub.hex` the organization published in advance. It checks inclusion, record count, and seal signature, and shows accept or reject. | 검증 창을 엽니다. 패키지와 조직이 미리 공개한 `seal_pub.hex`를 열면 포함 증명·레코드 수·봉인 서명을 확인해 수용 또는 거부를 보여 줍니다. |
 
-Without a window, the verifier runs `python side.py verifier check <package> --seal-public-key <seal_pub.hex>`.
+Without a window, the verifier double clicks `verifier\2_check_package.bat`. Before sending a package, the
+organization can preview the verdict with `organization\4_verify_package.bat` or `5_viewer.bat`.
 See [docs/guide.md](docs/guide.md) for every option.
 
-창 없이 검증하려면 `python side.py verifier check <패키지> --seal-public-key <seal_pub.hex>`를 실행합니다.
+창 없이 검증하려면 `verifier\2_check_package.bat`를 더블 클릭합니다. 조직은 패키지를 보내기 전에
+`organization\4_verify_package.bat`나 `5_viewer.bat`로 판정을 미리 볼 수 있습니다.
 모든 옵션은 [docs/guide.md](docs/guide.md)에 있습니다.
+
+<details>
+<summary>Command-line equivalents / 명령줄로 실행하기</summary>
+
+| Step | Command |
+|:---:|---------|
+| 1 | `python side.py organization seal-key` |
+| 2 | `python side.py employee install [--employee <account>] [--key-out <folder>]` (administrator) |
+| 3 | `python side.py employee root-key --key-out <folder>` (administrator) |
+| 5 | `python side.py employee status` (administrator) |
+| 6 | `python side.py employee collect [--include-logs]` (administrator) |
+| 7 | `python side.py organization receive <zip> --custody <SIDE_custody_*> --seal-private-key <seal_secret.hex>` |
+| 8 | `python side.py organization disclose [--lines]` |
+| 9 | `python side.py verifier` · without a window: `python side.py verifier check <package> --seal-public-key <seal_pub.hex> [--lines <file>]` |
+
+</details>
 
 ---
 
@@ -151,8 +168,8 @@ Do not run `field-test\` on a work PC. See [docs/field-test-manual.md](docs/fiel
 ## 6. FAQ / 자주 묻는 질문
 
 **"Administrator rights are required." appears. What should I do? / "Administrator rights are required."가 뜹니다. 어떻게 하나요?**  
-Open the terminal with *Run as administrator*, or right click the `.bat` file and choose *Run as administrator*.  
-터미널을 *관리자 권한으로 실행*하거나, `.bat` 파일을 오른쪽 클릭해 *관리자 권한으로 실행*을 고릅니다.
+The employee PC `.bat` files ask through User Account Control; click *Yes*, or sign in with an administrator account. On the command line, open the terminal with *Run as administrator*.  
+직원 PC의 `.bat` 파일은 사용자 계정 컨트롤 창으로 권한을 요청합니다. *예*를 누르거나 관리자 계정으로 로그인합니다. 명령줄에서는 터미널을 *관리자 권한으로 실행*합니다.
 
 **Why does the install refuse my Python? / 설치가 Python을 왜 거부하나요?**  
 The SYSTEM service will not run a Python under a user folder or from the Microsoft Store, because its owner could change it. Reinstall from python.org *for all users*.  
@@ -199,7 +216,7 @@ SIDE는 현재 심사 중인 논문과 함께 공개됩니다. 논문이 게재�
 ## 8. License / 라이선스
 
 ```
-SPDX-FileCopyrightText: 2026 Soojin Kang, Kookmin University
+SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
 SPDX-License-Identifier: Apache-2.0
 ```
 

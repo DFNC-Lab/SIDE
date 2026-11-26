@@ -1,0 +1,14 @@
+# Batch files must keep CRLF on every checkout and in "Download ZIP".
+# cmd.exe can misread labels (goto) in a bat file with LF-only line endings.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Everything else: normalize to LF in the repository.
+*.py  text eol=lf
+*.md  text eol=lf
+*.txt text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+LICENSE text eol=lf
+NOTICE  text eol=lf
+*.png binary
