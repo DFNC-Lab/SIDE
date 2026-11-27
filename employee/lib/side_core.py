@@ -1,41 +1,12 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-"""SIDE core: canonical JSON, the forward secure HMAC chain, Merkle proofs and the Ed25519 seal signature.
-
-A chain is a list of records.  Record i carries the tag
+"""SIDE core: canonical JSON, the forward-secure HMAC chain, Merkle proofs and the Ed25519 seal.
 
     T_i = HMAC(K_i, JCS(R_i) || "|" || T_{i-1}),    K_{i+1} = HMAC(K_i, EVOLVE_LABEL)
 
-and the writer overwrites K_i after use, so a later holder of the current key cannot forge earlier
-tags.  A seal closes the chain with the record count, the Merkle root of all records and the final
-tag.  The organization may sign the seal body with Ed25519.
-
-Design notes
-
-- The wire-format identifiers (labels, prefixes, spec strings, case id, custodian, source) come
-  from the original implementation.  They enter tags, hashes, signatures and files, so changing
-  any of them breaks verification of existing chains.
-- File names live here because the verifier and the viewer import only this module and
-  side_verify, never side_store.  An older install named the seal public key seal_pub.key.
-- jcs approximates RFC 8785: sorted keys, no whitespace, UTF-8, every string NFC-normalized.
-- KeySchedule memoizes evolved keys, so a verifier does not pay O(N^2).  Keys are looked up by
-  index, not carried through a loop: in an attacked chain seq can skip, repeat or run backwards,
-  and K_i must still depend on i alone.  A huge index (for example from a tampered seal) is
-  derived directly without filling the memo.
-- Ed25519 (RFC 8032) uses only the standard library, so the tool runs on closed networks.  A
-  seal is signed once per chain, so pure Python is fast enough.
-- The seal signature goes into seal["sig"] and covers SEAL_SIG_CONTEXT || JCS(seal["body"]).
-  The body and the HMAC seal tag stay untouched, so signing never changes a tag.
-- seal["sig"]["public_key"] is a convenience copy, not a basis of trust: a forger can embed a
-  key of their own.  The verifier must get the organization's public key through a separate
-  channel.  parse_seal_public_key checks only the shape of a key.
-- The device seals without a signature.  The organization signs the seal body later.  SIDE uses
-  no external time anchor, so anchor_authority stays "none".
-- Merkle leaves and inner nodes use distinct prefixes.  An odd node pairs with itself.
-- In a disclosure package undisclosed records appear only as leaf hashes.  The verifier compares
-  total_entries with the seal's entry_count, so a submitter cannot understate it.
-  require_signature lets the verifier reject a package whose signature was stripped.  The HMAC
-  seal tag needs the organization's key, so a package alone never checks it.
+The writer overwrites K_i after use, so a later key holder cannot forge earlier tags.  A seal closes
+a chain with its record count, Merkle root and final tag; the organization signs the seal body.
+Labels, prefixes and file names here are part of the wire format: changing one breaks existing chains.
 """
 from __future__ import annotations
 
@@ -326,8 +297,8 @@ def leaf_hash(record: dict) -> str:
     return sha256_hex(LEAF_PREFIX + jcs(record))
 
 
-def node_hash(l: str, r: str) -> str:
-    return sha256_hex(NODE_PREFIX + bytes.fromhex(l) + bytes.fromhex(r))
+def node_hash(left: str, right: str) -> str:
+    return sha256_hex(NODE_PREFIX + bytes.fromhex(left) + bytes.fromhex(right))
 
 
 def merkle_levels(leaves: list[str]) -> list[list[str]]:

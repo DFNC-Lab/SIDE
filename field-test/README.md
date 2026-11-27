@@ -20,9 +20,9 @@ the employee. Five `.bat` files run every check and leave one result file. A run
 ## 1. Before you start / 준비
 
 1. Put the whole repository where the administrator account can reach it, for example the desktop.
-   `1_admin_install.bat` copies `employee\`, `organization\`, `verifier\` and `src\` from it.
+   `1_admin_install.bat` copies the role folders `employee\`, `organization\` and `verifier\` from it.
    저장소 전체를 관리자 계정이 쓰는 곳(예: 바탕 화면)에 둡니다. `1_admin_install.bat`이 거기서
-   `employee\`, `organization\`, `verifier\`, `src\`를 복사합니다.
+   역할 폴더 `employee\`, `organization\`, `verifier\`를 복사합니다.
 2. Create a standard user account for the employee and sign in to it at least once.
    An administrator account cannot play the employee, because an administrator can stop the service.
    직원용 표준 사용자 계정을 만들고 한 번 이상 로그인해 둡니다. 관리자는 서비스를 멈출 수 있으므로
@@ -37,8 +37,8 @@ The test creates two folders on the system drive and locks both against the empl
 
 | Folder | Holds | 들어 있는 것 |
 |--------|-------|-------------|
-| `C:\SIDE_install\` | `employee\` and `src\`: the employee PC bundle, `seal_pub.hex`, collections | `employee\`와 `src\`: 직원 PC 묶음, `seal_pub.hex`, 수거 파일 |
-| `C:\SIDE_org_side\` | `organization\`, `verifier\` and `src\`, the seal private key, the root key custody `SIDE_custody_*` | `organization\`, `verifier\`, `src\`, 봉인 개인 키, 루트 키 보관본 `SIDE_custody_*` |
+| `C:\SIDE_install\` | `employee\`: the employee PC folder, `seal_pub.hex`, collections | `employee\`: 직원 PC 폴더, `seal_pub.hex`, 수거 파일 |
+| `C:\SIDE_org_side\` | `organization\` and `verifier\`, the seal private key, the root key custody `SIDE_custody_*` | `organization\`, `verifier\`, 봉인 개인 키, 루트 키 보관본 `SIDE_custody_*` |
 | `C:\Users\Public\SIDE_test\` | `2_employee_test.bat` and `side_test.py` for the employee | 직원이 실행할 `2_employee_test.bat`과 `side_test.py` |
 
 ---
@@ -67,10 +67,10 @@ To switch accounts, press **Win + L → Other user**, or Start → user icon →
 Every check is recorded as PASS, FAIL, or INFO. Stage 3 merges stages 1, 2, and 3 into `test_summary_<time>.txt`.
 모든 검사는 PASS, FAIL, INFO로 남습니다. 3단계가 1·2·3단계 결과를 `test_summary_<time>.txt`에 합칩니다.
 
-### Stage 1 · Install (Phase 0 Enrollment) / 설치 (0단계 가입)
+### Stage 1: Install (Phase 0 Enrollment) / 설치 (0단계 가입)
 
 - Copies the bundles into `C:\SIDE_install` and `C:\SIDE_org_side` and locks both against the employee.
-  묶음을 `C:\SIDE_install`과 `C:\SIDE_org_side`에 복사하고 둘 다 직원에게서 잠급니다.
+  역할 폴더를 `C:\SIDE_install`과 `C:\SIDE_org_side`에 복사하고 둘 다 직원에게서 잠급니다.
 - The organization makes the seal key pair. Only `seal_pub.hex` goes into `employee\`.
   조직이 봉인 키 쌍을 만듭니다. `employee\`에는 `seal_pub.hex`만 들어갑니다.
 - Installs the SYSTEM scheduled task, enrolls the PC, and moves the root key K0 to `C:\SIDE_org_side\SIDE_custody_*`.
@@ -83,7 +83,7 @@ Every check is recorded as PASS, FAIL, or INFO. Stage 3 merges stages 1, 2, and 
   배터리, 시간 제한 없음, 실행 중, 우선순위 4) · `watch.cmd`의 `service.log` 기록 · 서비스 폴더 4개는 SYSTEM과
   Administrators만 · PC에 K0 사본 없음 · 지금까지 묶인 체인 검증 · 백업 권한 없이 읽은 서비스 구간 없음 등.
 
-### Stage 2 · Employee (Phase 1 Binding at creation time) / 직원 (1단계 생성 시점 묶기)
+### Stage 2: Employee (Phase 1 Binding at creation time) / 직원 (1단계 생성 시점 묶기)
 
 - Writes 4 session logs where Claude Code keeps them (`.claude\projects\side-test-<time>\`): normal (20 lines),
   tamper (10), delete (5), denyread (3 + 3), then waits 60 seconds for binding.
@@ -101,7 +101,7 @@ Every check is recorded as PASS, FAIL, or INFO. Stage 3 merges stages 1, 2, and 
   정지 파일 쓰기 · 단말 기록부 삭제 · 키 폴더 열기 · `watch.cmd` 변경 · 소유권 가져오기 · 권한 변경 · 봉인 개인 키 읽기 ·
   `C:\SIDE_org_side` 열기 · `C:\SIDE_install` 열기.
 
-### Stage 3 · Collect and verify (Phase 2 Sealing, disclosure, and verification) / 수거·검증 (2단계 봉인·제출·검증)
+### Stage 3: Collect and verify (Phase 2 Sealing, disclosure, and verification) / 수거·검증 (2단계 봉인·제출·검증)
 
 - After the attacks: still one SYSTEM service process · no automatic restart · the service was running during
   the employee test · normal has 20 chained lines and denyread all 6 (backup read).
@@ -112,14 +112,14 @@ Every check is recorded as PASS, FAIL, or INFO. Stage 3 merges stages 1, 2, and 
 - Organization receive: manifest · enrollment certificate and seal public key against the custody copy ·
   root key commitment · seal signature · C1–C4 with K0. tamper must show *content mismatch*, delete must show
   *source absent*, and the other session chains must show no signals.
-  조직 수신: 매니페스트 · 보관본과 가입 증서·봉인 공개 키 대조 · 루트 키 커밋 · 봉인 서명 · K0로 C1–C4.
+  조직 수신: 매니페스트 · 보관본과 가입 증서·봉인 공개 키 대조 · 루트 키 커밋먼트 · 봉인 서명 · K0로 C1–C4.
   tamper는 *content mismatch*, delete는 *source absent*로 나와야 하고, 다른 세션 체인에는 신호가 없어야 합니다.
 - Disclosure package of records 1 to 5 of the normal session, then verification: the correct seal public key
   passes, a wrong key is rejected, and 4 tampered packages are rejected. A package with only `seal.tag` changed
   passes by design (INFO), because the seal signature does not cover that HMAC tag.
   normal 세션의 레코드 1~5로 제출 패키지를 만들고 검증합니다. 맞는 봉인 공개 키는 통과, 틀린 키는 거부, 조작한
-  패키지 4개는 거부됩니다. `seal.tag`만 바꾼 패키지는 설계상 통과합니다(INFO). 봉인 서명이 그 HMAC 태그를
-  덮지 않기 때문입니다.
+  패키지 4개는 거부됩니다. `seal.tag`만 바꾼 패키지는 설계상 통과합니다(INFO). 봉인 서명은 그 HMAC 태그를
+  포함하지 않기 때문입니다.
 
 ---
 

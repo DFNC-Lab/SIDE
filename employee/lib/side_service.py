@@ -1,47 +1,16 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-"""side_service: command line of the SIDE binding service and verifier.
+"""SIDE service command line: enroll, sweep, seal, verify and disclose.
 
-The environment variable SIDE_STORE names the service folder.  In deployment it must be a
-protected folder owned by the system account, so the path never comes from the code.  Without it
-the folder is .side_store next to this file (testing only).
+SIDE_STORE names the service folder (a SYSTEM-only folder in deployment).
 
-  python side_service.py --once --source claude              sweep once
   python side_service.py --watch --source claude codex antigravity
   python side_service.py --once --patterns "D:/somewhere/*.jsonl"
   python side_service.py --verify --org-key k0.hex --seal-pub seal_pub.hex
   python side_service.py --disclose <chain file> --seqs 3,5,7
-
-Keys: the device creates K0 at enrollment, binds the enrollment certificate with it and hands it
-to the organization.  The device keeps only the current stage key of each chain.  The organization
-creates the seal key pair on its own machine (--gen-seal-keypair) and signs sealed chains at
-collection (--countersign), so the seal private key never exists on the device.
-
-Design notes:
-  · The service runs with python -I, which leaves the script folder off sys.path, so the script
-    adds its own folder.
-  · Enrollment writes the organization's K0 file before the ledger.  If the ledger came first and
-    that write failed, K0 would exist nowhere and enrolling again would be blocked.  A K0 written
-    to a file is not printed, because a service's screen output easily ends up in a device log.
-  · Compatibility: SIDE enrolls with seal_key_mode "deferred".  Certificates from an older
-    install can say "local" (the device signed when it sealed, so a signature is expected), and
-    a certificate without seal_key_origin means "device".
-  · Countersigning signs the seal body only.  It must never change the body or the HMAC seal tag,
-    and a key that does not match the enrolled seal public key is refused.
-  · The seal public key must come from outside.  Whoever controls the device could replace the
-    device copy, so it is used only with an explicit --seal-pub store.
-  · The enrollment declaration in a package is only a device claim.  The verifier cannot inspect
-    the device and must compare it with the organization's custody copy.
-  · Sealing records any observation first, because nothing can be appended to the ledger after
-    its seal.  The ledger is sealed last, so seal_failed observations fall under its seal.  One
-    bad chain does not stop the run.
-  · --verify checks the ledger first, because when the service stopped explains gaps in session
-    chains.  The interval summary informs and never changes the verdict.  All verdicts are decided
-    before printing, so a console that blocks while printing cannot change the exit code.
-    Collection writes that exit code into its manifest as the precollection check.
-  · Without a sweep target the command returns before anything is created.  A failure to flush
-    output never overwrites the verdict.
 """
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -78,7 +47,7 @@ def cmd_gen_seal_keypair(outdir: str) -> int:
     sk.write_text(sk_hex, encoding="utf-8")
     pub.write_text(pub_hex, encoding="utf-8")
     print(f"seal key pair → {od}")
-    print(f"  public key {pub_hex}  (device enrollment --seal-pubkey {pub})")
+    print(f"  public key {pub_hex}  ({pub})")
     print(f"  the private key is only in {sk} -- not printed on screen")
     return 0
 
@@ -183,7 +152,14 @@ def cmd_countersign(seal_secret: str | None) -> int:
 
 def cmd_verify_package(path: str, pub_hex: str | None, require_gaps: bool,
                        lines_path: str | None) -> int:
-    pkg = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    try:
+        pkg = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"could not read the disclosure package {path}: {exc}")
+        return 1
+    if not isinstance(pkg, dict):
+        print(f"not a disclosure package: {path}")
+        return 1
     res = core.verify_disclosure_package(pkg, seal_public_key=pub_hex, require_signature=True)
     ok = res["all_ok"]
     print(f"disclosure package {path}")
@@ -262,7 +238,11 @@ def cmd_disclose(chain_file: str, seqs_arg: str | None, rule: str, pub_hex: str 
     res = core.verify_disclosure_package(pkg, seal_public_key=pub_hex,
                                          require_signature=require)
     if with_lines:
-        lp = verify.write_disclosed_lines(pkg, d, out, sessions_dir)
+        try:
+            lp = verify.write_disclosed_lines(pkg, d, out, sessions_dir)
+        except OSError as exc:
+            print(f"could not write the line text: {exc}")
+            return 1
         print(f"disclosed line text → {lp}")
     print(f"disclosure package → {out}")
     print(f"  {pkg['disclosed_count']} of {pkg['total_entries']} disclosed")
@@ -339,7 +319,7 @@ def cmd_verify(org_key: str | None, pub_hex: str | None, require_sig: bool,
         return 2
     if rk is None:
         print("Checking without the root key -- the organization runs tag recomputation (C1) and the "
-              "commitment comparison with --org-key." + chr(10))
+              "commitment comparison when it receives the collection." + chr(10))
     if skip_source:
         print("Verifying without session logs -- skipping C3 (line hash vs file) and C4 (checkpoint size) "
               "(the device ran them right before collection)." + chr(10))
@@ -432,7 +412,7 @@ def cmd_verify(org_key: str | None, pub_hex: str | None, require_sig: bool,
             have = "present"
         print(f"  public key copy on the device: {have}.  It is not a basis of trust,"
               " so the verdict does not use it.")
-        print("  Give the public key the organization published in advance with --seal-pub.")
+        print("  The seal signature is checked with the public key the organization published in advance.")
     mode = (store.load_enroll() or {}).get("seal_key_mode")
     for cp in chains:
         try:

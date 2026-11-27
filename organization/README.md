@@ -7,6 +7,9 @@ disclosure packages. It needs no administrator rights.
 조직의 보안 담당이 조직 PC에서 이 폴더를 실행하며, 직원 PC에는 절대 두지 않습니다. 봉인 키 쌍을 만들고,
 수거본마다 봉인에 서명하고 루트 키 K0로 검증하며, 제출 패키지를 만듭니다. 관리자 권한은 필요 없습니다.
 
+This folder works on its own. Copy it whole, including `lib\`, to the organization PC. It needs Python 3.10 or later from python.org.
+이 폴더는 따로 동작합니다. `lib\`까지 폴더 전체를 조직 PC에 복사합니다. python.org의 Python 3.10 이상이 필요합니다.
+
 ---
 
 ## 1. Steps / 단계
@@ -54,14 +57,14 @@ Send only the package (and the `.lines.jsonl` to a receiver entitled to read tho
 <details>
 <summary>Command line / 명령줄</summary>
 
-Run from the repository folder. See [docs/guide.md](../docs/guide.md).
-저장소 폴더 기준으로 실행합니다. [docs/guide.md](../docs/guide.md)를 참고하세요.
+Run inside this folder. See [docs/guide.md](../docs/guide.md).
+이 폴더 안에서 실행합니다. [docs/guide.md](../docs/guide.md)를 참고하세요.
 
 ```
-python side.py organization seal-key [--dir <folder>]
-python side.py organization receive <SIDE_collection_*.zip> --custody <SIDE_custody_*> --seal-private-key <seal_secret.hex>
-python side.py organization disclose [--collection <received\...>] [--list] [--chain N] [--range 5-9,12] [--rule <text>] [--lines]
-python side.py organization verify-package <SIDE_disclosure_*.json> --seal-public-key <seal_pub.hex> [--lines <*.lines.jsonl>]
+python lib\side.py organization seal-key [--dir <folder>]
+python lib\side.py organization receive <SIDE_collection_*.zip> --custody <SIDE_custody_*> --seal-private-key <seal_secret.hex>
+python lib\side.py organization disclose [--collection <received\...>] [--list] [--chain N] [--range 5-9,12] [--rule <text>] [--lines]
+python lib\side.py organization verify-package <SIDE_disclosure_*.json> --seal-public-key <seal_pub.hex> [--lines <*.lines.jsonl>]
 ```
 
 </details>

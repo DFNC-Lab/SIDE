@@ -33,7 +33,7 @@ SIDE_disclosure_*.lines.jsonl
 *.package.json
 *.lines.jsonl
 
-# side_service.py run without SIDE_STORE → src\.side_store\
+# side_service.py run without SIDE_STORE → lib\.side_store\
 .side_store/
 
 # tests\test_end_to_end.py → tests\results\

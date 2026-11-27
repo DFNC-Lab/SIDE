@@ -1,44 +1,14 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-r"""SIDE organization tools: make the seal key, receive a collection (seal signature and verification),
-disclose, verify a package.
+r"""SIDE organization tools (Phase 0 and Phase 2): seal key, receive, disclose, verify a package.
 
-These tools run on an organization machine, never on the device.  They call the same
-side_service.py that the device runs.  The organization bundle folder (organization\ next to src\)
-holds org_keys\, received\ and disclosures\.
+Runs on an organization PC, never on the employee PC.
 
-  python side.py organization seal-key [--dir <folder>]
-      Creates the seal key pair.  The private key stays on this machine.  The public key file
-      'seal_pub.hex' (same name and value as the one in org_keys\) goes into the device install folder.
-
-  python side.py organization receive <SIDE_collection_*.zip> --custody <SIDE_custody_* folder>
-          --seal-private-key <seal_secret.hex>
-      1. Extracts the zip and compares the files with the sha256 values in 00_manifest.json
-      2. Compares the enrollment certificate in the zip with the organization custody copy
-         (the employee can change the copy on the device)
-      3. Adds the organization seal signature (the device never signs)
-      4. Verifies C1-C4 with the root key K0 and the seal public key and writes verification_result.txt
-
-  python side.py organization disclose [--collection <received\...>] [--chain N --range 5-9,12] [--lines]
-      Extracts only the relevant records of a signed collection into a disclosure package.
-
-  python side.py verifier check <SIDE_disclosure_*.json> --seal-public-key <seal_pub.hex>
-          [--lines <*.lines.jsonl>]
-      Verification on the verifier side, without a window (the verify-package command of this file).
-      It needs only the package and the seal public key.
-
-Design notes
-  * Receive signs before it verifies, because --verify --require-sig counts an unsigned seal as a
-    finding.  The signature attests only the seal body exactly as the device produced it.
-    Countersigning leaves body and tag untouched and refuses a key that does not match the enrolled
-    public key.  Step 4 then checks that body against the chains with K0.  Its verdict goes to
-    verification_result.txt and the exit code, separate from the signature.
-  * Without session logs, C3 and C4 cannot run on this machine.  The device ran them right before
-    the collection and wrote the outcome into the manifest (precollection_check_passed).
-  * Compatibility: an archive from an older install names the key seal_pub.key.  A key of the
-    wrong form counts as a mismatch.
-  * The seal public key for verify-package may be a file under any name or the 64-digit value.
-  * Only disclose passes its other arguments on to disclose.py.  Every other command parses strictly.
+  python lib\side.py organization seal-key
+  python lib\side.py organization receive <SIDE_collection_*.zip> --custody <SIDE_custody_*>
+                                      --seal-private-key <seal_secret.hex>
+  python lib\side.py organization disclose [--chain N --range 5-9,12] [--lines]
+  python lib\side.py verifier check <SIDE_disclosure_*.json> --seal-public-key <seal_pub.hex>
 """
 from __future__ import annotations
 
@@ -46,6 +16,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -59,7 +30,7 @@ import side_store as store
 import side_util as util
 from side_util import say
 
-HERE = SRC.parent / "organization"
+HERE = SRC.parent
 SERVICE = SRC / "side_service.py"
 DISCLOSE = SRC / "disclose.py"
 RECEIVED = HERE / "received"
@@ -95,6 +66,9 @@ def make_seal_key(a) -> int:
 def receive_collection(a) -> int:
     zp = pathlib.Path(a.zip).resolve()
     custody = pathlib.Path(a.custody).resolve()
+    if not zipfile.is_zipfile(zp):
+        say("Not a collection zip, or the file does not exist: %s" % zp)
+        return 1
     for f in (core.K0_NAME, core.ENROLL_NAME, SEAL_PUB_NAME):
         if not (custody / f).exists():
             say("The organization custody copy has no %s: %s" % (f, custody))
@@ -194,6 +168,9 @@ def disclose(a, rest: list) -> int:
 
 def verify_package(a) -> int:
     key = pathlib.Path(a.seal_public_key)
+    if not key.exists() and not re.fullmatch(r"[0-9a-fA-F]{64}", a.seal_public_key.strip()):
+        say("Seal public key file not found, and not a 64-digit value: %s" % a.seal_public_key)
+        return 1
     args = ["--verify-package", pathlib.Path(a.package).resolve(), "--seal-pub",
             key.resolve() if key.exists() else a.seal_public_key]
     if a.lines:

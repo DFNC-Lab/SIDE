@@ -1,25 +1,15 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-"""Test of the whole SIDE release flow, from the seal key to the verifier.
+"""SIDE end-to-end test: the whole flow from the seal key to the verdict, with no admin rights.
 
-The test needs no administrator rights and registers no scheduled task. It installs no SYSTEM
-service on this PC. It loads side_device as a module and points the constants of its service folder at a
-temporary folder. It then calls side_service directly with the same arguments as watch.cmd, in place of
-the enrollment and binding that the scheduled task performs. Every other step runs the release
-code unchanged: root key move, collection, receiving the collection at the organization, seal
-signature, verification, disclosure and package verification.
+The service folder points to a temporary folder and side_service runs directly in place of the
+scheduled task.  Every other step runs the release code unchanged.
 
-  python tests/test_end_to_end.py
-
-Design notes:
-- The test copies the runtime modules flat into the bin folder, as install does.
-- Device A gets the seal public key as seal_pub.hex, device B under the legacy name seal_pub.key.
-  Both names must be read.
-- Device and organization share one PC here, so the session logs still sit at their original
-  paths. For O5 the test moves them away to mimic the organization machine.
-- O9 opens no viewer window. It calls only the function that reads the package.
-- Set SIDE_E2E_KEEP to a folder path to keep a copy of the temporary folder for inspection.
+  python tests/test_end_to_end.py        (SIDE_E2E_KEEP=<folder> keeps the temporary files)
 """
+from __future__ import annotations
+
+import argparse
 import contextlib
 import csv
 import importlib.util
@@ -34,8 +24,10 @@ import tempfile
 import zipfile
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-CODE = REPO / "src"
-CD = CODE / "side_service.py"
+EMP = REPO / "employee" / "lib"
+ORG = REPO / "organization" / "lib"
+VER = REPO / "verifier" / "lib"
+CD = EMP / "side_service.py"
 OUT = REPO / "tests" / "results" / "end_to_end.csv"
 results = []
 
@@ -67,7 +59,7 @@ def quietly(f, *a, **k):
 
 
 def prepare_device(T, name):
-    dev = load_module(CODE / "side_device.py", "side_device_" + name)
+    dev = load_module(EMP / "side_device.py", "side_device_" + name)
     base = T / name / "ProgramData" / "SIDE"
     dev.HERE = T / name / "employee"
     dev.BASE, dev.BIN, dev.STORE, dev.ORG = base, base / "bin", base / "store", base / "org"
@@ -79,21 +71,22 @@ def prepare_device(T, name):
     for d in (dev.BIN, dev.ORG, dev.HERE):
         d.mkdir(parents=True, exist_ok=True)
     for n in dev.RUNTIME:
-        shutil.copy2(CODE / n, dev.BIN / n)
+        shutil.copy2(EMP / n, dev.BIN / n)
     return dev
 
 
 def main() -> int:
     T = pathlib.Path(tempfile.mkdtemp(prefix="side_e2e_"))
     print("temporary folder", T)
-    org = load_module(CODE / "side_org.py", "side_org")
+    libs = load_module(REPO / "tests" / "sync_libs.py", "sync_libs").differences()
+    check("L0 the lib folders of employee, organization and verifier are equal (python tests\\sync_libs.py)",
+          not libs, "; ".join(libs[:3]))
+    org = load_module(ORG / "side_org.py", "side_org")
     org.HERE = T / "organization"
     org.RECEIVED = org.HERE / "received"
     org.HERE.mkdir(parents=True)
 
-    class A: pass
-    a = A(); a.dir = None
-    rc, out = quietly(org.make_seal_key, a)
+    rc, out = quietly(org.make_seal_key, argparse.Namespace(dir=None))
     pub = (org.HERE / "seal_pub.hex").read_text(encoding="utf-8").strip()
     check("O1 organization seal key pair (public key file name seal_pub.hex)", rc == 0 and len(pub) == 64
           and (org.HERE / "org_keys" / "seal_secret.hex").exists())
@@ -136,7 +129,7 @@ def main() -> int:
               rc == 0 and not dev.ORGKEY.exists() and (custody / "k0.hex").exists()
               and not list(dev.STORE.rglob("k0.hex")))
 
-        a = A(); a.include_logs = include_logs; a.out = None
+        a = argparse.Namespace(include_logs=include_logs, out=None)
         rc, out = quietly(dev.collect, a)
         zp = next((dev.HERE / "collections").glob("SIDE_collection_*.zip"))
         with zipfile.ZipFile(zp) as zf:
@@ -153,7 +146,7 @@ def main() -> int:
 
     secret = org.HERE / "org_keys" / "seal_secret.hex"
     for name, (zp, custody) in zips.items():
-        a = A(); a.zip = str(zp); a.custody = str(custody); a.seal_private_key = str(secret)
+        a = argparse.Namespace(zip=str(zp), custody=str(custody), seal_private_key=str(secret))
         rc, out = quietly(org.receive_collection, a)
         folder = org.RECEIVED / zp.stem
         txt = (folder / "verification_result.txt").read_text(encoding="utf-8")
@@ -190,7 +183,7 @@ def main() -> int:
     disclosures = org.HERE / "disclosures"
     env = dict(os.environ, SIDE_STORE=str(folder_b), PYTHONIOENCODING="utf-8", SIDE_OUT=str(disclosures),
                SIDE_SESSIONS_DIR=str(folder_b / "sessions"))
-    r = subprocess.run([sys.executable, str(CODE / "disclose.py"),
+    r = subprocess.run([sys.executable, str(ORG / "disclose.py"),
                         "--chain", "1", "--range", "1-3", "--lines"],
                        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
                        cwd=str(org.HERE))
@@ -199,8 +192,8 @@ def main() -> int:
     check("O6 disclosure package and line text", r.returncode == 0 and len(pk) == 1 and len(ln) == 1,
           (r.stdout or "")[-200:].replace("\n", " ") if r.returncode else "")
     if pk and ln:
-        a = A(); a.package = str(pk[0])
-        a.seal_public_key = str(org.HERE / "seal_pub.hex"); a.lines = str(ln[0])
+        a = argparse.Namespace(package=str(pk[0]), seal_public_key=str(org.HERE / "seal_pub.hex"),
+                               lines=str(ln[0]))
         rc, out = quietly(org.verify_package, a)
         check("O7 verifier: package, signature and line text", rc == 0,
               out.strip().splitlines()[-1] if out.strip() else "")
@@ -212,7 +205,7 @@ def main() -> int:
         rc, out = quietly(org.verify_package, a)
         check("O8 another public key is rejected", rc != 0)
 
-        viewer = load_module(CODE / "viewer.py", "side_viewer")
+        viewer = load_module(VER / "viewer.py", "side_viewer")
         pubhex = (org.HERE / "seal_pub.hex").read_text(encoding="utf-8").strip()
         vr = viewer.read_package(pk[0], pubhex, True)
 
@@ -220,11 +213,13 @@ def main() -> int:
               and vr["scope"].get("chain") and vr["verdict"]["all_ok"],
               "service intervals %s" % (vr["gap"]["summary"] or {}).get("intervals"))
 
-        f1 = T / "seal_pub.key"; f1.write_text(pubhex, encoding="utf-8")
-        f2 = T / "bom_pub.hex"; f2.write_bytes(b"\xef\xbb\xbf" + pubhex.upper().encode() + b"\r\n")
-        f3 = T / "wrong.hex"; f3.write_text("ab" * 16, encoding="utf-8")
+        f1, f2, f3 = T / "seal_pub.key", T / "bom_pub.hex", T / "wrong.hex"
+        f1.write_text(pubhex, encoding="utf-8")
+        f2.write_bytes(b"\xef\xbb\xbf" + pubhex.upper().encode() + b"\r\n")
+        f3.write_text("ab" * 16, encoding="utf-8")
         try:
-            viewer.read_public_key(f3); rejected = False
+            viewer.read_public_key(f3)
+            rejected = False
         except ValueError:
             rejected = True
         check("O10 viewer public key file (legacy name, BOM, wrong form rejected)",

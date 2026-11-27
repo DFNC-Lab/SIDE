@@ -1,28 +1,14 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-"""SIDE disclosure (organization): build a disclosure package from the incident part of a signed collection.
+r"""SIDE disclosure: build a package from the incident records of a signed collection (Phase 2).
 
-On the organization machine, `side.py organization disclose` calls this file
-(SIDE_STORE = received\\<archive>, SIDE_OUT = disclosures\\).
+The package holds the chosen records, their Merkle inclusion proofs, the seal and the count of
+records left out.  It holds no conversation text; --lines writes that text to a separate file.
 
-  python side.py organization disclose                            choose interactively
-  python side.py organization disclose --list                     only list the chains and records
-  python side.py organization disclose --chain 3 --range 5-9,12   build directly
-
-What the package contains
--------------------------
-The chosen records, their Merkle inclusion proofs and the seal.  **The package contains no
-conversation text.**  The chain holds only hashes and byte positions.  So the package proves
-"this record was at this position", not "someone said this".  With --lines, a separate
-.lines.jsonl file carries the text of the chosen lines, and that file does contain conversation text.
-
-Why a part and not everything
------------------------------
-Disclosing everything also sends parts unrelated to the incident.  Disclosing a part invites the
-suspicion that only favourable records were chosen.  So the package **also reports the number** of
-records not disclosed, and every item carries an inclusion proof.  The receiver can tell whether the
-disclosure broke its stated scope.
+  python lib\side.py organization disclose [--list] [--chain N --range 5-9,12] [--lines]
 """
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -37,7 +23,7 @@ import side_core as core
 import side_util as util
 from side_util import say
 
-HERE = SRC.parent / "organization"
+HERE = SRC.parent
 STORE = pathlib.Path(os.environ.get("SIDE_STORE") or (HERE / core.STORE_DIR_NAME))
 CHAINS = STORE / core.CHAINS_DIR
 SERVICE = SRC / "side_service.py"
@@ -135,6 +121,10 @@ def main():
     if not chains:
         say("The collection holds no chain.")
         return 1
+    if a.lines and not os.environ.get("SIDE_SESSIONS_DIR"):
+        say("This collection holds no session logs (it was collected with [1]), so it has no line text.")
+        say("Choose [1] for the package only, or collect again with [2] in employee\\4_collect.bat.")
+        return 1
 
     say("=" * RULE)
     say("  SIDE make disclosure package")
@@ -226,6 +216,7 @@ def main():
         *(["--with-lines"] if a.lines else []),
         *(["--scope", rule] if rule else []),
         *(["--sessions-dir", os.environ["SIDE_SESSIONS_DIR"]] if os.environ.get("SIDE_SESSIONS_DIR") else []),
+        *(["--seal-pub", str(HERE / core.SEAL_PUB_NAME)] if (HERE / core.SEAL_PUB_NAME).exists() else []),
         cwd=HERE)
     if rc != 0:
         say()

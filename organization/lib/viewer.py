@@ -1,51 +1,15 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-"""SIDE viewer: it reads collected material and shows it.
+r"""SIDE viewer: a read-only window for collected chains and disclosure packages.
 
-This window does not bind.  The binding service binds under the system account, and this
-window only reads the result.  A window that runs with user rights and can change a chain
-would let the log subject change the chain through it.
+It never writes, never shows the root key and never shows conversation text.  Every verdict comes
+from side_verify, so the window and the command line always agree.
 
-The viewer therefore keeps three rules.
-
-  * It only reads files.  This file contains no path that writes to the service folder.
-  * It never shows the root key.  It shows only the commitment (a hash).
-  * It never shows conversation text.  A chain holds only hashes and byte offsets, so it
-    has no text to show.
-
-The viewer has two views for two audiences.
-
-  [Chain view]    The organization or an investigator opens a service folder collected from
-                  a device.  If the user picks the root key K0 file that the organization
-                  keeps in custody, the viewer runs all four checks (C1-C4).  Without it the
-                  viewer runs the checks other than C1.  It also reads the service intervals
-                  from the device ledger.  The device does not hold the root key.
-  [Package view]  The verifier opens one disclosure package.  The verifier needs only the
-                  package, without the whole chain or the root key.  With a seal public key
-                  received separately, the viewer also judges the seal signature.
-
-Run
-  python side.py verifier                                           opens this window
-  python side.py verifier check <package> --seal-public-key <key>   verifies without a window
-
-Design notes
-  * side_verify makes every verdict, the same as side_service --verify.  The viewer only lays the
-    verdicts out, so the two cannot drift apart.
-  * Signals are classed by their stable code (side_verify.Finding), never by their wording.  Only
-    some indicate forgery.  If all showed mixed, every collection would open in red, and the reader
-    would soon ignore the red.  Names and "other cause" texts follow the paper's table of verifier
-    signals.
-  * The core's all_ok means "nothing disagrees", not "everything was checked".  A package with no
-    records or an empty Merkle root has nothing that can disagree, so it gets no verdict, not a pass.
-  * Without a public key the signature result is None, and None does not lower all_ok.  So any
-    unjudged layer turns the verdict into "accept (withheld)", and "not judged" is never left blank.
-  * The enrollment certificate must commit to the root key in use, and the ledger must bind the
-    certificate.
-  * The root key is taken only from a file and never shown.  Users often pick the parent of the
-    service folder, so the viewer also looks one level down.
+  python lib\side.py verifier
 """
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import pathlib
@@ -67,6 +31,7 @@ except ImportError as exc:
         "The implementation was not found (%s).\n"
         "side_core.py and side_verify.py must be in the same folder as this file." % exc)
 
+ICON_NAME = "side_logo.ico"
 SHOWN_HEX = 32
 SHOWN_DECLARED = 48
 SHOWN_SIGNALS = 5
@@ -268,10 +233,22 @@ NAME_COLUMN = "170p"
 GREY = "#555"
 
 
+def set_app_id() -> None:
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SIDE.viewer")
+    except (AttributeError, OSError):
+        pass
+
+
 class Viewer(tk.Tk):
     def __init__(self):
+        set_app_id()
         super().__init__()
         self.title("SIDE viewer (read only)")
+        try:
+            self.iconbitmap(default=str(HERE / ICON_NAME))
+        except tk.TclError:
+            pass
         self.geometry("1000x680")
         self.minsize(840, 560)
 
@@ -353,7 +330,7 @@ class Viewer(tk.Tk):
         self.text.see(tk.END)
 
     def field(self, name, value, tag=""):
-        self.write("   %s	%s" % (name, value), tag)
+        self.write("   %s\t%s" % (name, value), tag)
 
     def write_signals(self, signals, indent="   "):
         if not signals:

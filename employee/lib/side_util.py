@@ -1,21 +1,9 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-"""Helpers shared by the SIDE tools: console output, file hashes, folder locks and service runs.
+"""SIDE utilities: console output, file hashes, folder locks and service runs.
 
-The installer copies this module next to side_service.py, because the service and side_store
-import it.
-
-Design notes
-
-- The service and the installer run as SYSTEM or as an administrator, so Windows tools are called
-  by their full path under System32.  A bare name would be searched in the current folder and on
-  PATH first.
-- A console with a non-UTF-8 code page cannot print every character.  A file name outside its
-  table would raise UnicodeEncodeError mid-run and end a verification with exit code 1.
-  keep_output_alive switches stdout and stderr to backslashreplace instead.
-- say flushes each line, so the output keeps its order next to subprocess output.
-- run_service with isolated adds -I, so the child ignores the environment and user site-packages
-  as the installed service does.
+Windows tools are called by their full path under System32, because the callers run as SYSTEM or
+as an administrator.  The installer copies this module next to side_service.py.
 """
 from __future__ import annotations
 

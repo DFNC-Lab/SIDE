@@ -1,42 +1,13 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-"""SIDE verifier: checks C1 to C4 on session chains, the device ledger, seals, disclosed line
-text and the gap report of a disclosure package.
+"""SIDE verification: checks C1-C4, the device ledger, seals, line text and the gap report.
 
   C1 tag recomputation      needs the organization's root key K0
   C2 offset continuity      line records continue byte by byte
   C3 line hash vs file      needs the session log
   C4 checkpoint size        the session log never became smaller than an observed size
 
-Every check returns its findings as Finding objects: strings of one line that also carry a stable
-code.  Front ends classify a finding by its code, never by its wording.  The wording stays stable
-too, because the field test reads it.
-
-Design notes:
-  · A collected service folder is verified against its own ledger, next to its chains.
-  · The ledger is read as bytes every time.  Its parsed index is reused only when the bytes equal
-    the previous read, because mtime can miss tampering within one tick.  The key schedule is
-    cached per K0.  Without these caches verification is O(N^2) in the number of sessions.
-  · The service reuses a start key on retry, so a duplicate session_open comes from files of an
-    older install or from someone holding a later ledger key who appended an open to rebuild the
-    chain.  Verification picks the open whose key reproduces the first tag, else the last open
-    (C1 then reports the mismatch), and always reports the duplicate.  The ledger alone also
-    reports it, without K0.
-  · C2 accepts two gaps: a cursor_reset whose "to" is the next start and moves backward (restart
-    after shrink), and a whitespace-only gap in the log (blank lines get no record).  The second
-    needs the log, so without it the gap is reported.
-  · Without session logs (--skip-source) C3 and C4 are noted, not counted.  The device ran them
-    right before collection.  A deleted log is invisible to such a check.
-  · The verifier cannot tell a running service from a killed one, so it does not pretend to.  A
-    deleted chain drops out of the chain list, so only the ledger shows it.
-  · The certificate file alone cannot reveal a swapped certificate, so it is compared with the
-    copy bound into the first ledger record.
-  · Compatibility: SIDE enrolls in deferred mode (the organization signs at collection).  An older
-    install may say local, where the device signed on the spot, so a missing signature there means
-    removal.  This case stays so existing evaluation data still verifies.
-  · A gap report holds the enrollment record, all service starts and stops, and records of this
-    session only.  Records of other sessions stay out, because they would reveal those sessions.
-  · Collected logs are named with a path hash prefix, so equal file names stay apart.
+Each finding carries a stable code; front ends classify findings by code, never by wording.
 """
 from __future__ import annotations
 
@@ -374,7 +345,7 @@ MISSING_SIGNATURE = {
     "removed": ("no signature -- suspected removal",
                 "a device enrolled in local mode signs on the spot when it seals"),
     "awaiting": ("no signature -- awaiting seal signature",
-                 "enrolled as deferred.  The organization must run --countersign"),
+                 "enrolled as deferred.  The organization signs it on receipt"),
     "unknown": ("no signature -- cause unknown",
                 "no enrollment certificate, so whether a signature is expected cannot be judged"),
 }
@@ -393,7 +364,12 @@ def seal_signature_status(seal: dict, pub_hex: str | None, mode: str | None) -> 
 def write_disclosed_lines(pkg: dict, chain: dict, pkg_path: pathlib.Path,
                           sessions_dir: pathlib.Path | None = None) -> pathlib.Path:
     src = first_session_file(chain.get("entries", []))
-    raw = resolve_source(src, sessions_dir).read_bytes() if src else b""
+    raw = b""
+    if src:
+        p = resolve_source(src, sessions_dir)
+        if sessions_dir is not None and p.parent != sessions_dir:
+            raise FileNotFoundError("the collection holds no copy of this session log")
+        raw = p.read_bytes()
     out = pkg_path.with_suffix(".lines.jsonl")
     with out.open("w", encoding="utf-8", newline="\n") as fh:
         for it in pkg.get("items", []):

@@ -1,73 +1,11 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-"""SIDE binding service: find session logs, read complete new lines and bind them.
+"""SIDE binding: find session logs, read complete new lines and bind them (Phase 1).
 
-The service runs under the system account.  Each sweep reads every complete new line of every
-session log and appends a line record (byte range and SHA-256) to the chain of that log.
-
-  · The cursor trusts the chain.  state.json has no protection.  When the process first touches
-    a file, it restores the cursor from the last line or cursor_reset record of the chain.
-  · A session opens once.  Before it writes session_open, the service stores the start key K_s0
-    together with the ledger seq it derives from, and it saves the chain right after the open.
-    A retry reuses that key.  A silent second open would let a holder of a later ledger key
-    rebuild the chain, so the verifier reports any duplicate.
-  · Binding continues after a shrink.  The cursor moves to the end of the last complete line at
-    or below the new size.  A ledger observation (file_shrank) and a cursor_reset chain record
-    capture the move.
-  · One file does not stop the service.  Its problem becomes a sweep_error or observation in the
-    ledger.  Only a broken ledger (LedgerBroken) stops the service.
-  · With restart_on_error, an exception that ends the sweep loop records service_stop and then
-    service_start(restart, after).  The verifier reports the unbound time in between.
-  · The backup read mode enables SeBackupPrivilege and opens logs with FILE_FLAG_BACKUP_SEMANTICS.
-    This bypasses a read deny that an employee places on their own folder.
-
-Hook reports arrive through a drop folder.  The service treats them as untrusted (trusted=False),
-so the folder may live where employees can write.  A report that is not a JSON object is
-dropped, because it would make every file of the sweep fail.
-
-Design notes:
-  · There is no default source.  A wider binding scope must never happen silently.
-  · Google Antigravity keeps one folder brain/<conversation UUID>/ per conversation.  Its
-    .system_generated/logs/ holds transcript.jsonl (tool output shortened) and
-    transcript_full.jsonl (tool output in full), both append only.  logs/chunks/ repeats the same
-    bytes and conversations/<UUID>.db is SQLite, so only the two transcripts are bound.  The
-    Antigravity CLI uses the same layout under ~/.gemini/antigravity-cli/.  Its chain names carry
-    the conversation prefix, because transcript_<hash> alone does not show the conversation.
-  · Paths are normalized to NFC.  A path returned in NFD would map the same file to a second
-    chain.  A name already in NFC is unchanged, so existing chain names stay valid.
-  · The agent is decided by the path alone.  Log content is never interpreted.  The verifier
-    reads the session id from the ledger and never rebuilds it from the path.
-  · A new chain is opened in this order: store K_s0 with its ledger seq j, save session_open
-    (after which L_j is gone), then save the chain.  A crash between the last two steps does not
-    open the session twice, because the retry reuses the stored key.
-  · Why backup reads: a plain open() obeys the DACL, so the employee who owns the logs could deny
-    the system account read access.  With SeBackupPrivilege, FILE_FLAG_BACKUP_SEMANTICS grants
-    the open by privilege.  os.stat and directory listing already use backup intent.  Share modes
-    still apply: a handle that denies read sharing causes a sharing violation (a sweep_error).
-    All three share modes are granted, so the service never blocks the agent's writes, renames
-    or deletes.  Without the privilege (user rights, tests) the plain open() is used.
-  · AdjustTokenPrivileges succeeds with ERROR_NOT_ALL_ASSIGNED (1300) for a token without the
-    privilege, so the last error must also be 0.
-  · A last line without a newline may still be in progress and waits for the next sweep.  Blank
-    lines advance the offset without a record.  After a shrink, binding restarts just after the
-    last newline at or below the new size, because starting at the size would join a cut line
-    with new bytes.  The cursor_reset goes before the new lines so the verifier sees why the
-    offset went back.
-  · The chain cannot be trusted when its key is ahead of it (its end was cut) or it is malformed.
-    A past key cannot be recovered, so such a chain takes no more records and the range after the
-    cursor stays unbound.  A cursor in state.json ahead of the chain is normal only across blank
-    lines.  Otherwise someone edited the cursor file, which becomes an observation.
-  · state.json is saved about STATE_SAVES_PER_SWEEP times per sweep.  Saving after every file
-    makes the first binding quadratic.  A state.json that cannot be written is recorded once and
-    does not stop binding.  If the chain cannot be saved, the cursor does not move and the next
-    sweep retries.
-  · CHECKPOINT_SEC bounds the unbound window.  An unchanged file (same size and mtime) gets a
-    checkpoint only every HEARTBEAT_SEC.  The last checkpoint still vouches for it, so C4 catches
-    the same things and the cost grows with new data instead of files x time.  A checkpoint opens
-    the log even for zero new bytes, because it also observes that the log was readable.
-  · A completed sweep resets the restart count, so rare transient errors do not use up the limit
-    of a service that runs for months.  A killed process records nothing; its start without a
-    stop marks the abnormal stop.
+Each sweep appends a line record (byte range and SHA-256) for every complete new line of every
+session log.  The cursor is restored from the chain, never trusted from state.json.  Logs are read
+with SeBackupPrivilege, so an employee who denies SYSTEM read access is bypassed.  Problems with one
+file go to the ledger; only a broken ledger stops the service.
 """
 from __future__ import annotations
 

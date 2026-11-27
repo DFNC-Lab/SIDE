@@ -1,47 +1,15 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-r"""SIDE field test on one PC: an administrator account (install, organization, verifier) and a
-standard user account (employee).
+"""SIDE field test on one PC: an administrator account and a standard user account as the employee.
 
   1_admin_install.bat              python side_test.py install   (administrator)
-  2_employee_test.bat              python side_test.py employee  (employee, from C:\Users\Public\SIDE_test)
+  2_employee_test.bat              python side_test.py employee  (employee)
   3_admin_collect_and_verify.bat   python side_test.py collect   (administrator)
   9_admin_cleanup.bat              python side_test.py cleanup   (administrator)
   0_diagnose.bat                   python side_test.py diagnose  (administrator)
 
-Every check is recorded as PASS, FAIL or INFO.  When stage 3 ends, the script writes
-test_summary_<time>.txt into this folder.
-
-Design notes:
-- field-test\ sits next to employee\, organization\, verifier\ and src\. Install copies src\ next
-  to the bundles because their bat files call ..\src\.
-- The employee stage runs from a lone copy of this file in C:\Users\Public\SIDE_test, without
-  src\. So the file keeps its own copies of a few side_core and side_util values (SIDs, RULE,
-  STAMP, file names). The administrator stages load side_util from src\. load_util stops if the
-  copies differ.
-- The denyread session gets 3 lines before and 3 after SYSTEM is denied read. The service must
-  still chain all 6 through its backup read.
-- Windows commands print in the OEM code page (cp437 on English Windows), not UTF-8.
-- The console is switched to UTF-8 so that symbols such as '·' and '→' print. Windows Terminal
-  (WT_SESSION) already uses UTF-8.
-- While the service runs, the last service_start in the ledger has no stop. The verifier cannot
-  tell running from dead and reports it. In verify_live that signal alone is expected.
-- The ledger (_device) is judged apart from the session chains. The attack and the reboot test
-  leave observations and broken intervals there, so "no signals" would be a false FAIL. Instead
-  a broken interval must be explained by a boot record in the Windows System log, and an
-  observation by an attack file of this run or a cursor restore right after a reboot.
-- If the employee test ran after a reboot but before the service came back, the service saw none
-  of it, and the line, tamper and delete verdicts all fail. Stage 3 checks for this one cause.
-- service_start can come minutes after boot. The service.log start lines tell a late scheduled
-  task (a late "watch.cmd start") from a late Python (an early "watch.cmd start").
-- An edit or delete between session_seen and session_open stays hidden, so stage 3 records that
-  delay.
-- The seal signature covers only seal.body. seal.tag is an HMAC that needs the device key, so a
-  package with only seal.tag changed passes by design. That check is INFO.
-- The service records session_seen before it reads a file. In the diagnosis file the last file
-  seen marks where a stalled service stopped. The diagnosis file holds no conversation text.
-- Cleanup also removes side-test, where the manual walkthrough puts first.jsonl. The next test
-  would bind a leftover copy. icacls /reset first clears the denyread deny entry.
+The employee stage runs from a lone copy of this file, so it keeps its own copies of a few
+side_core and side_util values; load_util stops if they differ.
 """
 from __future__ import annotations
 
@@ -68,8 +36,8 @@ BASE = PD / "SIDE"
 DEV = INST / "employee"
 ORG = ORGD / "organization"
 VIEW = ORGD / "verifier"
-DEV_SRC = INST / "src"
-ORG_SRC = ORGD / "src"
+DEV_SRC = DEV / "lib"
+ORG_SRC = ORG / "lib"
 STATE = ORGD / "test_state.json"
 R1 = ORGD / "test_result_1_install.json"
 PUBINFO = PUB / "test_info.json"
@@ -96,14 +64,14 @@ util = None
 
 def load_util() -> None:
     global util
-    sys.path.insert(0, str(REPO / "src"))
+    sys.path.insert(0, str(REPO / "employee" / "lib"))
     import side_core
     import side_util
     util = side_util
     stale = [k for k, v in CORE_NAMES.items() if getattr(side_core, k) != v]
     stale += [k for k, v in (("RULE", RULE), ("STAMP", STAMP)) if getattr(side_util, k) != v]
     if stale:
-        raise SystemExit("side_test.py copies of %s differ from src\\.  Update side_test.py."
+        raise SystemExit("side_test.py copies of %s differ from employee\\lib\\.  Update side_test.py."
                          % ", ".join(stale))
 
 
@@ -309,7 +277,10 @@ def power_events(start, end) -> list:
     k = (start, end)
     if k in _power_cache:
         return _power_cache[k]
-    f = lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def f(t: datetime.datetime) -> str:
+        return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
     out = ps("$s=[datetime]::Parse('%s'); $e=[datetime]::Parse('%s'); "
              "Get-WinEvent -FilterHashtable @{LogName='System'; StartTime=$s; EndTime=$e; "
              "Id=6005,6006,6008,1074,41,42,107,12,13} -ErrorAction SilentlyContinue | "
@@ -317,8 +288,8 @@ def power_events(start, end) -> list:
              "+ $_.ProviderName }"
              % (f(start - datetime.timedelta(seconds=60)), f(end + datetime.timedelta(seconds=60))))
     res = []
-    for l in out.splitlines():
-        p = l.strip().split("|")
+    for line in out.splitlines():
+        p = line.strip().split("|")
         if len(p) != 3 or not p[1].isdigit():
             continue
         i, prov = int(p[1]), p[2]
@@ -394,14 +365,14 @@ def service_lines() -> list[str]:
              "Where-Object { $_.CommandLine -like '*side_service*--watch*' } | "
              "ForEach-Object { (Invoke-CimMethod -InputObject $_ -MethodName GetOwner).User + '|' "
              "+ $_.CommandLine }")
-    return [l for l in out.splitlines() if "|" in l]
+    return [line for line in out.splitlines() if "|" in line]
 
 
 def restart_count() -> int:
     f = BASE / "restart.log"
     if not f.exists():
         return 0
-    return len([l for l in f.read_text(encoding="mbcs", errors="replace").splitlines() if l.strip()])
+    return len([line for line in f.read_text(encoding="mbcs", errors="replace").splitlines() if line.strip()])
 
 
 def check_deployment(stage: str) -> None:
@@ -440,8 +411,8 @@ def check_deployment(stage: str) -> None:
         "$ids = (Get-Acl -LiteralPath '%s').Access | ForEach-Object { try { $_.IdentityReference."
         "Translate([Security.Principal.SecurityIdentifier]).Value } catch { $_.IdentityReference.Value } } "
         "| Sort-Object -Unique; '%s|' + ($ids -join ',')" % (d, d.name) for d in dirs))
-    for l in out.splitlines():
-        name, ids = l.split("|", 1)
+    for line in out.splitlines():
+        name, ids = line.split("|", 1)
         extra = [x for x in ids.split(",") if x and x not in (util.SID_SYSTEM, util.SID_ADMINS)]
         check(stage, "folder permissions %s: SYSTEM and Administrators only" % name,
               not extra, ", ".join(extra))
@@ -453,6 +424,7 @@ def check_deployment(stage: str) -> None:
 
 def verify_live(stage: str) -> None:
     env = {"SIDE_STORE": str(BASE / "store")}
+
     def only_running(b: dict) -> bool:
         bad = {k: v for k, v in b.items() if not v["ok"]}
         dv = bad.get(LEDGER_NAME)
@@ -490,8 +462,8 @@ def pick_employee() -> str:
              "Get-LocalUser | Where-Object { $_.Enabled } | ForEach-Object { '{0}|{1}|{2}' -f "
              "$_.Name, ($adm -contains $_.SID.Value), ($prof -contains $_.SID.Value) }")
     candidates, admins = [], []
-    for l in out.splitlines():
-        p = l.split("|")
+    for line in out.splitlines():
+        p = line.split("|")
         if len(p) == 3:
             (admins if p[1] == "True" else candidates if p[2] == "True" else []).append(p[0])
     me = os.environ.get("USERNAME", "")
@@ -534,7 +506,7 @@ def install() -> int:
         if BASE.exists() or task_exists() or INST.exists() or ORGD.exists():
             raise SystemExit("The previous attempt could not be fully removed.  "
                              "Restart the PC and run this bat file again.")
-    bundles = {k: find_bundle(k) for k in ("employee", "organization", "verifier", "src")}
+    bundles = {k: find_bundle(k) for k in ("employee", "organization", "verifier")}
     say("  Python : %s" % PY)
     if str(PY).lower().startswith(str(pathlib.Path(os.environ.get("SystemDrive", "C:") + "\\Users")).lower()):
         raise SystemExit("This Python is in a user folder.  Run the test with a Python for all users.")
@@ -542,17 +514,16 @@ def install() -> int:
     say("  Employee account: %s" % employee)
     mysid = sysrun(["whoami", "/user", "/fo", "csv", "/nh"])[1].split(",")[-1].strip().strip('"')
 
-    heading("[1] Create the folders, lock them against the employee, copy the bundles and src")
+    heading("[1] Create the folders, lock them against the employee, copy the role folders")
     for d in (INST, ORGD):
         d.mkdir(parents=True)
         lock_down(d, mysid)
-    for k, dst in (("employee", DEV), ("organization", ORG), ("verifier", VIEW),
-                   ("src", DEV_SRC), ("src", ORG_SRC)):
+    for k, dst in (("employee", DEV), ("organization", ORG), ("verifier", VIEW)):
         shutil.copytree(bundles[k], dst, ignore=shutil.ignore_patterns("__pycache__"))
         say("    %s → %s" % (bundles[k], dst))
-    check(stage, "copy the bundles and src",
-          all(p.exists() for p in (DEV_SRC / "side_device.py", ORG_SRC / "side_org.py",
-                                   ORG_SRC / "viewer.py")))
+    check(stage, "copy the role folders, each with its own lib\\",
+          all(p.exists() for p in (DEV_SRC / "side_device.py", DEV_SRC / "side.py", ORG_SRC / "side_org.py",
+                                   ORG_SRC / "viewer.py", VIEW / "lib" / "viewer.py")))
 
     heading("[2] Organization: make the seal key pair and put only the public key in the device bundle")
     rc, _ = run([PY, ORG_SRC / "side_org.py", "seal-key"], cwd=ORG)
@@ -852,8 +823,8 @@ def collect_continue(stage: str, st: dict, tag: str) -> int:
     check(stage, "root key commitment match", "root key commitment match" in out)
     sigs = []
     capturing = False
-    for l in out.splitlines():
-        s = l.strip().lstrip("|").strip()
+    for line in out.splitlines():
+        s = line.strip().lstrip("|").strip()
         if s.lower().startswith("seal signature"):
             capturing = True
             continue
@@ -956,8 +927,8 @@ def report(rows: list[dict]) -> str:
         if r["stage"] != stage:
             stage = r["stage"]
             out.append("\n[%s]" % stage)
-        out.append("  %-4s %s%s" % ({True: "PASS", False: "FAIL", None: "INFO"}[r["ok"]], r["items"],
-                                   ("  -- " + r["detail"]) if r["detail"] else ""))
+        mark = {True: "PASS", False: "FAIL", None: "INFO"}[r["ok"]]
+        out.append("  %-4s %s%s" % (mark, r["items"], ("  -- " + r["detail"]) if r["detail"] else ""))
     return "\n".join(out) + "\n"
 
 
@@ -1095,9 +1066,10 @@ def diagnose(reason: str = "") -> pathlib.Path:
                 lines += ["", "-- last 20 ledger records (total %d)" % len(ent)]
                 for e in ent[-20:]:
                     r = e.get("record") or {}
-                    lines.append("  %s  %-14s %s %s" % (_clock(_utc(r.get("ts_recorded"))), r.get("kind", ""),
-                                                      r.get("session_file", "") or r.get("what", ""),
-                                                      r.get("reason", "") or r.get("error", "")))
+                    lines.append("  %s  %-14s %s %s" % (
+                        _clock(_utc(r.get("ts_recorded"))), r.get("kind", ""),
+                        r.get("session_file", "") or r.get("what", ""),
+                        r.get("reason", "") or r.get("error", "")))
             except Exception as e:
                 lines.append("(could not read the ledger %s)" % e)
             try:

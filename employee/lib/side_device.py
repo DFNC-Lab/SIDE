@@ -1,63 +1,14 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-r"""SIDE device administration: install, move the root key, status, collect, uninstall.
+r"""SIDE employee PC administration (Phase 0 and Phase 2): install, root key, status, collect, uninstall.
 
-The tool runs the binding service (side_service.py) as a permanent service under SYSTEM.
+Install copies the service into the locked %ProgramData%\SIDE and registers a SYSTEM scheduled task
+that starts it at every boot.  The device makes K0 for the organization; the seal private key never
+exists on the device.  All commands need administrator rights.
 
-  * The tool copies the service modules to %ProgramData%\SIDE\bin and locks that folder.  If
-    SYSTEM ran code from a folder the employee can write, the employee could change that code and
-    run it as SYSTEM.
-  * The tool refuses a Python under a user profile or from the Microsoft Store for the same
-    reason.  The service starts Python with -I, so Python ignores environment variables and user
-    site-packages.
-  * A scheduled task under SYSTEM starts the service at boot, keeps it running on battery and sets
-    no run time limit.  The employee cannot open the service folder or stop the service.
-  * SYSTEM creates the service folder itself and locks it to SYSTEM and Administrators before the
-    service starts.
-  * Enrollment accepts only a seal public key that the organization made off the device
-    (--seal-pubkey).  The seal private key never exists on the device.  The device creates the
-    root key K0 and writes it to the locked organization folder.  K0 never appears on screen or in
-    a log the employee can read.
-  * The stop file lives in the locked organization folder.  When the process dies, the batch loop
-    starts it again.
-  * The service sweeps the session logs of Claude Code, Codex CLI and Antigravity.  It also
-    watches tools that have no session logs yet, so a tool installed later is bound from then on.
-  * Right after enrollment the administrator moves K0 off the device, and the tool erases the
-    device copy.  Until then, anyone who copies K0 can recompute every tag.
-
-Usage (all commands need administrator rights)
-    python side.py employee install [--employee <account>] [--key-out <folder>] [--fresh]
-    python side.py employee root-key --key-out <folder>      if install skipped this step
-    python side.py employee status
-    python side.py employee collect [--include-logs] [--out <folder>]
-    python side.py employee uninstall
-
-The employee bundle folder (employee\ next to src\) holds seal_pub.hex and receives collections\.
-
-Design notes
-  * Enrollment runs only when none exists.  A new enrollment makes a new K0, and the chains bound
-    earlier would no longer verify.  So install continues in an unsealed service folder.  A sealed
-    folder or --fresh moves the previous install aside.
-  * The service always reads in backup mode.  In auto mode, a failure to enable the backup
-    privilege would fall back silently to a plain open.  In backup mode the service refuses to
-    start, and restart.log records it.  Python runs unbuffered (-u), so service.log shows where a
-    service stalled.
-  * The task runs at priority 4 (normal, like interactive programs).  The default priority 7 also
-    lowers the process and disk I/O priority, and after boot that delays the service by minutes.
-  * The batch loop restarts the service process.  The task restart count (one minute apart) is
-    only an outer safety net for when watch.cmd itself fails.
-  * The tool stops the service with the stop file.  A killed service writes no service_stop record,
-    and the verifier reads that as an abnormal stop.  So the tool kills only when the stop file has
-    no effect.
-  * A service that starts late after boot deletes the stop file as a leftover from the last run.
-    So the tool writes the stop file again while it waits.
-  * The process search excludes PowerShell itself.  Its command line holds the search text, so an
-    absent service would otherwise count as one.
-  * K0 on the device is overwritten, then deleted.  On an SSD the overwrite may not reach the
-    original blocks.  The deletion always runs.
-  * Compatibility: a service folder from an older install holds seal_pub.key.  The collection
-    archive always names the key seal_pub.hex.  Session log copies in the archive are named by
-    source_key, which --sessions-dir uses to find them.
+  python lib\side.py employee install [--employee <account>] [--key-out <folder>] [--fresh]
+  python lib\side.py employee root-key --key-out <folder>
+  python lib\side.py employee status | collect [--include-logs] | uninstall
 """
 from __future__ import annotations
 
@@ -83,7 +34,7 @@ import side_util as util
 import side_verify as verify
 from side_util import say
 
-HERE = SRC.parent / "employee"
+HERE = SRC.parent
 SERVICE_NAME = "side_service.py"
 CORE_NAME = "side_core.py"
 RUNTIME = (CORE_NAME, "side_store.py", "side_bind.py", "side_verify.py", "side_util.py", SERVICE_NAME)
@@ -178,7 +129,13 @@ def check_python() -> pathlib.Path:
 
 
 def console_user() -> str:
-    return ps_utf8("(Get-CimInstance Win32_ComputerSystem).UserName")
+    user = ps_utf8("(Get-CimInstance Win32_ComputerSystem).UserName")
+    if user:
+        return user
+    return ps_utf8("$o=@(Get-CimInstance Win32_Process -Filter \"Name='explorer.exe'\" | "
+                   "ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName GetOwner } | "
+                   "Where-Object { $_.User } | ForEach-Object { $_.Domain + '\\' + $_.User } | "
+                   "Select-Object -Unique); if ($o.Count -eq 1) { $o[0] }")
 
 
 def profile_path(account: str) -> pathlib.Path:
@@ -189,7 +146,7 @@ def profile_path(account: str) -> pathlib.Path:
         "(Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sid }).LocalPath" % q)
     if not out:
         raise SystemExit("Could not find the profile folder of account '%s'.  Sign in to that account once\n"
-                         "and install again, or give the exact account name with --employee." % account)
+                         "and install again, or type the exact account name (PC-NAME\\name)." % account)
     return pathlib.Path(out.splitlines()[0].strip())
 
 
@@ -354,8 +311,9 @@ def install(a) -> int:
         return 1
     account = a.employee or console_user()
     if not account:
-        raise SystemExit("Could not find the employee account signed in now.  "
-                         "Give it with --employee <account>.")
+        raise SystemExit("Could not find the employee account signed in now.\n"
+                         "Run employee\\1_install.bat again and type the account name at the first question\n"
+                         "(for example PC-NAME\\kim), or give it with --employee <account>.")
     home = profile_path(account)
     pats = session_patterns(home)
 
@@ -452,6 +410,7 @@ def move_root_key(dest_dir: str | None, ask: bool = False) -> int:
     say("  The employee of this device must not be able to read that location.")
     if ask and not dest_dir:
         try:
+            say("  Type the folder, for example E:\\  (dragging does not work in an administrator window).")
             dest_dir = input("  Destination folder (leave empty to run "
                              "employee\\2_move_root_key.bat later): ").strip().strip('"')
         except EOFError:
@@ -461,6 +420,13 @@ def move_root_key(dest_dir: str | None, ask: bool = False) -> int:
         say("    but anyone with administrator rights can read it.  "
             "Run employee\\2_move_root_key.bat as soon as possible.")
         return 0
+    if len(dest_dir) == 2 and dest_dir[1] == ":":
+        dest_dir += "\\"
+    drive = pathlib.Path(dest_dir).anchor
+    if drive and not pathlib.Path(drive).exists():
+        say("\n  ! Drive not found: %s.  The root key stays on the device." % drive)
+        say("    Plug in the USB drive and run employee\\2_move_root_key.bat.")
+        return 1
     k0 = ORGKEY.read_text(encoding="utf-8").strip()
     enroll = json.loads((STORE / ENROLL_NAME).read_text(encoding="utf-8"))
     if core.key_commitment(bytes.fromhex(k0)) != enroll["key_commitment"]:
@@ -626,8 +592,8 @@ def collect(a) -> int:
     say("    %d chains%s" % (n_chain, " · %d session logs" % n_sess if a.include_logs else ""))
     say("\n" + "-" * RULE)
     say("  Created file: %s" % zp)
-    say("  Send this file to the organization.  %s" % ("It contains the conversation text." if a.include_logs
-                                                      else "It contains no conversation text."))
+    text = "It contains the conversation text." if a.include_logs else "It contains no conversation text."
+    say("  Send this file to the organization.  %s" % text)
     say("-" * RULE)
     return 0
 

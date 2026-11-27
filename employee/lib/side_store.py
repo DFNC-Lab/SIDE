@@ -1,62 +1,13 @@
-# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+# SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 # SPDX-License-Identifier: Apache-2.0
-"""SIDE service folder: paths, durable writes, cursor state, stage keys, enrollment certificate,
-chains and the device ledger.
+"""SIDE service folder: paths, durable writes, cursor state, stage keys, enrollment and ledger.
 
-Layout of a service folder
+    chains/_device.chain.json   device ledger           keys/<chain>.key   current stage key
+    chains/<name>.chain.json    one chain per log        state.json        cursor cache (unprotected)
+    enroll.json                 enrollment certificate   seal_pub.hex      seal public key copy
 
-    chains/_device.chain.json   device ledger
-    chains/<name>.chain.json    one chain per session log
-    keys/<chain>.key            current stage key of each chain (locked to SYSTEM and Administrators)
-    state.json                  cursor cache (unprotected)
-    enroll.json                 enrollment certificate
-    seal_pub.hex                copy of the organization's seal public key
-    hints/                      hook drop folder
-
-The device never stores the root key K0.  It keeps only the current stage key of each chain.
-
-Save order: the chain is written first and the key second.  A crash in between leaves the key
-behind the chain, and load_key evolves a lagging key forward.  The opposite order would leave the
-key ahead of the chain, and a past key cannot come back.
-
-Call use(path) once before any other function to point the module at a service folder.  Nothing
-is set at import, so a tool that only reads key files never touches a service folder.
-
-Design notes
-
-- root.key is never created.  Its presence draws a warning.  seal_sign.key comes from an older
-  install that signed on the device.  It is never read, only reported, and it stays as evidence.
-- LedgerBroken does not inherit RuntimeError on purpose.  The sweep treats RuntimeError as a
-  problem of one chain, but a broken ledger leaves no place for observations, so the service
-  must stop.
-- os.replace renames atomically, but after a power loss the new name can point to an empty file.
-  write_durable calls fsync before the swap.  Text is written like Path.write_text, so the bytes
-  are the same.
-- state.json is only a cache.  The cursor rests on the chain.  A broken state.json must not stop
-  the service: it is moved aside as evidence, not overwritten, and the first sweep records a
-  state_unreadable observation.  A malformed entry restarts at 0 and is restored from the chain.
-- keys/ is locked to the process account, SYSTEM and Administrators, and does not inherit the
-  folder's permissions.  Reading a chain does no harm, but the current key K_n forges every tag
-  after n.
-- A pending start key records open_seq, the ledger position of its session_open.  If the process
-  dies after saving session_open but before the chain, a retry reuses the key instead of opening
-  the session twice.  The key is used only if that ledger record still matches.
-- An existing chain always continues from its saved stage key.  It never derives again from a
-  root or start key, because the device holds none.  A sealed chain refuses appends.
-- During binding, used stage keys are zeroed in the CPython bytes buffer.  This is best effort:
-  copies from hashing, swap and other Python implementations stay out of reach.  Verification
-  reuses key sequences, so it never wipes.
-- The ledger file always has the shape json.dumps(to_dict(), indent=1), so an unsealed ledger
-  ends with a fixed trailer.  An append writes the new records and the trailer at that position,
-  byte-identical to a full rewrite, with newlines turned into os.linesep as text mode would do.
-- The ledger held in memory is reused only while file size, mtime and key file show that the file
-  is exactly what this process last wrote.  After a failed save it is dropped.
-- An append in place is not atomic.  If the ledger is not valid JSON, a torn tail is cut back to
-  the last complete record and the cut bytes are saved to a side file, because a forensic tool
-  must not drop data silently.  The key of the torn record was never saved, so the repaired
-  ledger matches the key.
-- note_device opens and saves the ledger on each call, so a sudden death keeps everything up to
-  the previous call.  Any failure becomes LedgerBroken, so the sweep cannot swallow it.
+The device never stores K0.  A chain is saved before its key, so a crash leaves the key behind the
+chain, where it can be evolved forward.  Call use(path) before any other function.
 """
 from __future__ import annotations
 

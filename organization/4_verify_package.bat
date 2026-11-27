@@ -1,6 +1,13 @@
 @echo off
-rem SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim, Kookmin University
+rem SPDX-FileCopyrightText: 2026 Soojin Kang, Donghwoo Cho, Jongsung Kim (DF&C Lab., Department of Cyber Security, Kookmin University, Republic of Korea)
 rem SPDX-License-Identifier: Apache-2.0
-rem Preview what the verifier will see.  Runs verifier\2_check_package.bat with this folder's seal_pub.hex.
-if exist "%~dp0seal_pub.hex" set SIDE_PUB=%~dp0seal_pub.hex
-call "%~dp0..\verifier\2_check_package.bat"
+if exist "%~dp0lib\run.cmd" goto side_ok
+echo  ! The lib\ folder is missing in %~dp0
+echo    Copy the whole folder, including lib\, and run the file inside it.
+echo.
+echo  Press any key to close this window.
+pause >nul
+exit /b 1
+:side_ok
+rem Preview what the verifier will see, with this folder's seal_pub.hex.
+call "%~dp0lib\check_package.cmd"

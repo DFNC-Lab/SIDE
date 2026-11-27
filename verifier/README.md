@@ -8,6 +8,9 @@ not the root key or the whole chain. The tools only read files and use no networ
 공개한 봉인 공개 키만 있으면 되며, 루트 키나 체인 전체는 필요 없습니다. 도구는 파일을 읽기만 하고 네트워크를
 쓰지 않습니다.
 
+This folder works on its own. Copy it whole, including `lib\`. It needs Python 3.10 or later from python.org.
+이 폴더는 따로 동작합니다. `lib\`까지 폴더 전체를 복사합니다. python.org의 Python 3.10 이상이 필요합니다.
+
 ---
 
 ## 1. Steps / 단계
@@ -29,7 +32,7 @@ in `.lines.jsonl`; the window does not.
 
 | Layer | Question | 묻는 것 |
 |-------|----------|--------|
-| 1 Inclusion | Do the disclosed records hang from the Merkle root of this package (inclusion proof)? | 제출된 레코드가 이 패키지의 머클 루트에 매달려 있는가(포함 증명)? |
+| 1 Inclusion | Do the disclosed records hang from the Merkle root of this package (inclusion proof)? | 제출된 레코드가 이 패키지의 머클 루트에 포함되는가(포함 증명)? |
 | 2 Record count | Does the total record count in the package equal the count in the seal body? | 패키지의 전체 레코드 수가 봉인 본문의 수와 같은가? |
 | 3 Seal signature | Does the seal point to this root, and did the organization sign it? | 봉인이 이 루트를 가리키고, 조직이 서명했는가? |
 
@@ -73,7 +76,7 @@ holds only hashes and byte offsets). Every verdict comes from the same code that
 
 SIDE는 기록을 남기는 사람이 그 기록을 바꿀 수 없다는 전제에 서 있으며, 그래서 system 계정이 묶습니다. 사용자
 권한 창이 체인을 건드릴 수 있다면 기록의 주인이 그 창으로 기록을 바꿀 수 있습니다. 그래서 검증 창은 파일을
-읽기만 하고, 루트 키는 보여 주지 않고(약정값만), 대화 원문도 보여 주지 않습니다(체인에는 해시와 바이트 위치만
+읽기만 하고, 루트 키는 보여 주지 않고(커밋먼트 값만), 대화 원문도 보여 주지 않습니다(체인에는 해시와 바이트 위치만
 있음). 모든 판정은 `side_service.py --verify`와 `--verify-package`가 쓰는 코드가 그대로 내립니다.
 
 ---
@@ -88,7 +91,7 @@ session logs.
 
 *Chain view*는 수거본 전체를 가진 조직이나 조사자가 씁니다. `received\<zip 이름>\` 폴더(상위 폴더도 됨)를 고르고,
 이어 보관본의 `k0.hex`를 고릅니다. 가입 증서, 단말 기록부, 세션 체인별 C1–C4 결과, 위조 신호가 있는 체인 수를
-보여 줍니다. 키 창을 취소하면 C1과 약정값 확인을 건너뜁니다. C3와 C4는 수거본에 세션 로그가 있을 때만 돕니다.
+보여 줍니다. 키 창을 취소하면 C1과 커밋먼트 확인을 건너뜁니다. C3와 C4는 수거본에 세션 로그가 있을 때만 실행됩니다.
 
 | Check | Question | 묻는 것 |
 |-------|----------|--------|
@@ -103,9 +106,9 @@ session logs.
 
 | Shown | Meaning | 의미 |
 |-------|---------|------|
-| Service state: an interval is still open | A `service_start` has no `service_stop`. The service may still be running, or someone killed it; the two cannot be told apart at verification time. | `service_start` 뒤에 `service_stop`이 없습니다. 서비스가 아직 돌고 있거나 누군가 죽였으며, 검증 시점에는 둘을 구분할 수 없습니다. |
+| Service state: an interval is still open | A `service_start` has no `service_stop`. The service may still be running, or someone killed it; the two cannot be told apart at verification time. | `service_start` 뒤에 `service_stop`이 없습니다. 서비스가 아직 실행 중이거나 누군가 강제로 종료했을 수 있으며, 검증 시점에는 둘을 구분할 수 없습니다. |
 | session log absent | Normal when the collection holds chains only. C3 and C4 did not run, so it shows in yellow. | 체인만 수거했다면 정상입니다. C3와 C4가 돌지 않았으므로 노란색으로 표시합니다. |
-| A C2 offset gap and other signals | Each signal has causes other than tampering, such as a service stop or agent compaction. Compare it with the stops and read failures in the ledger. | 신호마다 서비스 정지나 에이전트 압축처럼 조작 아닌 원인이 있습니다. 기록부의 정지와 읽기 실패와 대조합니다. |
+| A C2 offset gap and other signals | Each signal has causes other than tampering, such as a service stop or agent compaction. Compare it with the stops and read failures in the ledger. | 신호마다 서비스 정지나 에이전트의 대화 압축처럼 조작이 아닌 원인이 있을 수 있습니다. 기록부의 정지와 읽기 실패와 대조합니다. |
 
 ---
 
@@ -120,12 +123,12 @@ session logs.
 <details>
 <summary>Command line / 명령줄</summary>
 
-Run from the repository folder. See [docs/guide.md](../docs/guide.md).
-저장소 폴더 기준으로 실행합니다. [docs/guide.md](../docs/guide.md)를 참고하세요.
+Run inside this folder. See [docs/guide.md](../docs/guide.md).
+이 폴더 안에서 실행합니다. [docs/guide.md](../docs/guide.md)를 참고하세요.
 
 ```
-python side.py verifier
-python side.py verifier check <SIDE_disclosure_*.json> --seal-public-key <seal_pub.hex or 64-digit value> [--lines <*.lines.jsonl>]
+python lib\side.py verifier
+python lib\side.py verifier check <SIDE_disclosure_*.json> --seal-public-key <seal_pub.hex or 64-digit value> [--lines <*.lines.jsonl>]
 ```
 
 The command line prints `verdict: pass` or `verdict: reject` (exit code 0 or 1) and always requires the seal
@@ -136,7 +139,7 @@ signature. For the chain view without a window:
 
 ```
 set SIDE_STORE=<received\zip name>
-python src\side_service.py --verify --org-key <k0.hex> --seal-pub <seal_pub.hex> --require-sig [--sessions-dir <received\zip name>\sessions]
+python lib\side_service.py --verify --org-key <k0.hex> --seal-pub <seal_pub.hex> --require-sig [--sessions-dir <received\zip name>\sessions]
 ```
 
 </details>

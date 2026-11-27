@@ -58,6 +58,8 @@ A window with administrator rights has **"Administrator:"** in its title.
 
 Each step lists **what should appear**. Tick ☑ when it matches. When it differs, copy the screen as it is.
 Collect those copies for "What to send" at the end.
+On a Windows in another language, Windows tools (`schtasks`, `icacls`, `takeown`, PowerShell errors) print
+their messages in that language; for example "Access is denied" or "Successfully processed 1 files" appear translated.
 
 ---
 
@@ -67,9 +69,9 @@ Collect those copies for "What to send" at the end.
 
 **1-1. Put the repository on the test PC**
 - Where: Explorer, or `git clone` in a PowerShell window
-- What to do: copy the whole repository to `C:\SIDE_source\`. The steps below use its `employee\`,
-  `organization\`, `verifier\` and `src\` folders.
-- What should appear: `C:\SIDE_source\employee\`, `C:\SIDE_source\organization\`, `C:\SIDE_source\verifier\` and `C:\SIDE_source\src\` exist. ☐
+- What to do: copy the whole repository to `C:\SIDE_source\`. The steps below use its role folders
+  `employee\`, `organization\` and `verifier\`; each works on its own with its `lib\`.
+- What should appear: `C:\SIDE_source\employee\lib\`, `C:\SIDE_source\organization\lib\` and `C:\SIDE_source\verifier\lib\` exist. ☐
 
 **1-2. Create the employee account**
 - Where: **admin PowerShell**
@@ -117,8 +119,6 @@ Collect those copies for "What to send" at the end.
   Copy-Item -Recurse C:\SIDE_source\employee     C:\SIDE_install\employee
   Copy-Item -Recurse C:\SIDE_source\organization C:\SIDE_org_side\organization
   Copy-Item -Recurse C:\SIDE_source\verifier     C:\SIDE_org_side\verifier
-  Copy-Item -Recurse C:\SIDE_source\src          C:\SIDE_install\src
-  Copy-Item -Recurse C:\SIDE_source\src          C:\SIDE_org_side\src
   Get-ChildItem -Recurse C:\SIDE_install, C:\SIDE_org_side | Unblock-File
   icacls C:\SIDE_org_side
   ```
@@ -172,7 +172,7 @@ Collect those copies for "What to send" at the end.
 - What should appear (black window), with content like:
   ```
       seal key pair → C:\SIDE_org_side\organization\org_keys
-        public key <64 hex digits>  (device enrollment --seal-pubkey …\org_keys\seal_pub.hex)
+        public key <64 hex digits>  (…\org_keys\seal_pub.hex)
         the private key is only in …\org_keys\seal_secret.hex -- not printed on screen
 
     For the device   : C:\SIDE_org_side\organization\seal_pub.hex
@@ -202,7 +202,7 @@ Collect those copies for "What to send" at the end.
 - Type (use the path from 3-3):
   ```powershell
   cd C:\SIDE_install\employee
-  & "C:\Program Files\Python313\python.exe" ..\src\side_device.py install --employee sidetest
+  & "C:\Program Files\Python313\python.exe" lib\side.py employee install --employee sidetest
   ```
 - Why the command line: `employee\1_install.bat` also works here if you type `sidetest` at its question
   "Employee account to bind". Pressing Enter there binds the **account signed in now**, which is the
@@ -261,7 +261,7 @@ Collect those copies for "What to send" at the end.
   ```
     Scheduled task 'SIDE' : registered
     Service processes  : 1 (normal)
-    Install            : <time> · employee sidetest · <revision, REVISION in src\side_core.py>
+    Install            : <time> · employee sidetest · <revision, REVISION in lib\side_core.py>
     Ledger             : N records · last …
                          <record kinds and counts>
     Session chains     : 1 or more   (first.jsonl from 2-3)
@@ -279,9 +279,9 @@ Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object Command
 
 **4-3. Scheduled task settings**
 ```powershell
-schtasks /Query /TN SIDE /V /FO LIST | Select-String "Run As User|Schedule Type|Status"
+$t = Get-ScheduledTask -TaskName SIDE; "$($t.Principal.UserId) | $($t.Triggers[0].CimClass.CimClassName) | $($t.State)"
 ```
-- What should appear: Run As User `SYSTEM` · Schedule Type "At system start up" · Status "Running" ☐
+- What should appear: `SYSTEM | MSFT_TaskBootTrigger | Running` (runs as SYSTEM · starts at system start up · running) ☐
 
 **4-4. Is the service folder locked?**
 ```powershell
@@ -583,8 +583,9 @@ Start-Sleep 10
   `C:\SIDE_org_side\organization\received\SIDE_collection_<device>_<time>` → in the root key window that
   follows, `C:\SIDE_org_side\SIDE_custody_<device>_<time>\k0.hex`
 - What should appear: enrollment certificate commitment match · service intervals of the device ledger ·
-  **signals only on tamper and delete** in the session chain table · the verdict says that 2 of the 5
-  session chains have signals that indicate forgery ☐
+  **signals only on tamper and delete** in the session chain table · the verdict says that **1** of the 5
+  session chains carries a signal that indicates forgery (tamper, red). The deleted log shows as
+  "session log absent" (orange), because a missing log can also have other causes ☐
 
 ---
 
